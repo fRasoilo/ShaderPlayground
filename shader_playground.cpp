@@ -1,3 +1,7 @@
+
+#include <sys/stat.h> //__stat64 and _stat64
+
+
 #define SIMPLE_OGL_IMPLEMENTATION
 #define SGL_DEFAULT_EXAMPLE
 
@@ -30,6 +34,8 @@ struct loaded_file
 
 bool32 win32_load_file_data(char *file_name, loaded_file *loaded_file);
 void win32_free_loaded_file(loaded_file *loaded_file);
+uint64 win32_get_file_timestamp(char* file_name);
+
 
 #define HASH(str) djb2_hash(str)
 unsigned long djb2_hash(char* str)
@@ -43,78 +49,6 @@ unsigned long djb2_hash(char* str)
 }
 
 //Shader and Program Creation
-struct Shader
-{
-    char file_name[MAX_PATH];
-    GLuint handle;
-    GLenum type;
-    uint64 hash;
-    uint64 time_stamp;
-};
-
-// VERTEX_SHADER
-// FRAGMENT_SHADER
-// GEOMETRY_SHADER
-// TESS_CONTROL_SHADER
-// TESS_EVALUATION_SHADER
-// COMPUTE_SHADER
-#define NUM_SHADERS_IN_PROGRAM 6
-struct Program
-{
-    uint64 hash;
-    GLuint handle;
-    GLuint *shader_list[NUM_SHADERS_IN_PROGRAM];
-    uint32 shader_count;
-    bool32 need_update;
-};
-
-
-#define MAX_SHADERS 100
-#define MAX_PROGRAMS 100
-
-struct ShaderSystem
-{
-    uint32 num_shaders;
-    Shader shaders[MAX_SHADERS];
-
-    uint32 num_programs;
-    Program programs[MAX_PROGRAMS];
-
-    //Can change at any time, and is cleared out after update_programs finishes
-    uint32 num_to_update
-    Program programs_to_update[MAX_PROGRAMS];
-
-    void create_program(Shader *shader_list, uint32 count, char* program_name)
-    {
-        Program new_program = {};
-        new_program.hash = HASH(program_name);
-        new_program.shader_count = count;
-
-        for(uint32 index = 0; index < count; ++index)
-        {
-            shaders[num_shaders] = shader_list[index];
-            new_program.shader_list[index] = &shaders[num_shaders].handle;
-            ++num_shaders;
-        }
-        new_program.handle = create_program(new_program.shader_list, count, program_name);
-    }
-
-    GLuint * get_program(char* program_name)
-    {
-        uint64 lookup_hash = HASH(program_name);
-        for(uint32 index = 0; index < num_programs; ++index)
-        {
-            if(programs[index].hash == lookup_hash)
-            {
-                return(&programs[index].handle);
-            }
-        }
-    }
-};
-
-
-
-
 GLuint create_shader_inline(const char* shader_file, GLenum shader_type)
 {
     GLuint shader = glCreateShader(shader_type);
@@ -155,9 +89,7 @@ GLuint create_shader_from_file(char* file_name, GLenum shader_type)
     return(shader);
 }
 
-
-GLuint
-create_program(GLuint* shader_list, int size, char* debug_name)
+GLuint create_program(GLuint* shader_list, int size, char* debug_name)
 {
     GLuint program = glCreateProgram();
     
@@ -187,6 +119,130 @@ create_program(GLuint* shader_list, int size, char* debug_name)
     }
     return program;
 }
+
+
+#define MAX_SHADERS 100
+#define MAX_PROGRAMS 100
+
+//Convenience struct for creating programs.
+struct FileShaderType
+{
+    char* file_name;
+    GLenum type;
+};
+
+//Internal shader representaiton
+struct Program;
+
+struct Shader
+{
+    char* file_name[MAX_PATH];
+    GLenum type;
+    GLuint handle;
+    uint64 hash;
+    uint64 time_stamp;
+
+    //Program that use this shader
+    Program *programs[MAX_PROGRAMS];
+    uint32 num_programs;
+
+};
+
+// VERTEX_SHADER
+// FRAGMENT_SHADER
+// GEOMETRY_SHADER
+// TESS_CONTROL_SHADER
+// TESS_EVALUATION_SHADER
+// COMPUTE_SHADER
+#define NUM_SHADERS_IN_PROGRAM 6
+struct Program
+{
+    uint64 hash;
+    GLuint handle;
+    GLuint *shader_list[NUM_SHADERS_IN_PROGRAM];
+    uint32 shader_count;
+    bool32 need_update;
+};
+
+
+struct ShaderSystem
+{
+    uint32 num_shaders;
+    Shader shaders[MAX_SHADERS];
+
+    uint32 num_programs;
+    Program programs[MAX_PROGRAMS];
+
+    //Can change at any time, and is cleared out after update_programs finishes
+    uint32 num_to_update;
+    Program programs_to_update[MAX_PROGRAMS];
+
+    void add_program(FileShaderType *file_type_pair, uint32 count, char* program_name)
+    {
+        Program new_program = {};
+        new_program.hash = HASH(program_name);
+        new_program.shader_count = count;
+
+        for(uint32 i = 0; i < count; ++i)
+        {
+            //@TODO: Check if this shader existis in the system
+            // If yes then retrieve the handle 
+            //      Add it to the program shader list
+            //      Add this program to its program list
+            //      Increment the number of programs that use it
+
+            //If no then go here
+            //New Shader to add to the system
+            Shader shader = {};
+            shader.file_name = file_type_pair[i].file_name; //@TODO: CopyString
+            shader.type =  file_type_pair[i].type;
+            shader.handle = create_shader_from_file(shader.file_name[0],shader.type);
+            shader.hash = HASH(file_type_pair[i].file_name);
+            shader.time_stamp = win32_get_file_timestamp(file_type_pair->file_name);
+            shader.programs[shader.num_programs] = &programs[num_programs];
+            shader.num_programs++;
+
+            //Add the shader to the system
+            shaders[num_shaders] = shader;
+            //Add shader to program
+            new_program.shader_list[i] = &shaders[num_shaders].handle;
+            ++num_shaders;
+        }
+        new_program.handle = create_program(new_program.shader_list[0], new_program.shader_count, program_name);
+        ++num_programs;
+    }
+
+#if 0
+    void create_program(Shader *shader_list, uint32 count, char* program_name)
+    {
+        Program new_program = {};
+        new_program.hash = HASH(program_name);
+        new_program.shader_count = count;
+
+        for(uint32 index = 0; index < count; ++index)
+        {
+            shaders[num_shaders] = shader_list[index];
+            new_program.shader_list[index] = &shaders[num_shaders].handle;
+            ++num_shaders;
+        }
+        new_program.handle = create_program(new_program.shader_list, count, program_name);
+    }
+#endif
+
+    GLuint * get_program(char* program_name)
+    {
+        uint64 lookup_hash = HASH(program_name);
+        for(uint32 index = 0; index < num_programs; ++index)
+        {
+            if(programs[index].hash == lookup_hash)
+            {
+                return(&programs[index].handle);
+            }
+        }
+    }
+};
+
+
 
 #if 0
 internal void sgl_init_default_program()
@@ -421,6 +477,15 @@ win32_free_loaded_file(loaded_file *loaded_file)
         VirtualFree(loaded_file->contents, 0, MEM_RELEASE);
     }
 }
+
+uint64 
+win32_get_file_timestamp(char* file_name)
+{
+    struct __stat64 file_info = {};
+    _stat64(file_name, &file_info);
+    return(file_info.st_mtime);
+}
+
 
 //
 //
