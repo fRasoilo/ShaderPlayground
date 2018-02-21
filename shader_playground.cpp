@@ -33,6 +33,27 @@ struct gl_renderer
 };
 gl_renderer ogl_renderer = {};
 
+//Internal shader representaiton
+#define MAX_SHADERS 100
+#define MAX_PROGRAMS 100
+
+struct Program;
+
+struct Shader
+{
+    char file_name[MAX_PATH];
+    GLenum type;
+    GLuint handle;
+    uint64 hash;
+    uint64 time_stamp;
+
+    //Program that use this shader
+    Program *programs[MAX_PROGRAMS];
+    uint32 num_programs;
+
+};
+
+
 //Forward Declares
 internal LRESULT CALLBACK window_callback(HWND window, UINT message, WPARAM WParam, LPARAM LParam);
 internal void process_msgs(void);
@@ -100,13 +121,13 @@ GLuint create_shader_from_file(char* file_name, GLenum shader_type)
     return(shader);
 }
 
-GLuint create_program(GLuint* shader_list, int size, char* debug_name)
+GLuint create_program(Shader* shader_list, int size, char* debug_name)
 {
     GLuint program = glCreateProgram();
     
     for(size_t index = 0; index < size; ++index)
     {
-        glAttachShader(program, shader_list[index]);
+        glAttachShader(program, shader_list[index].handle);
     }
     glLinkProgram(program);
 
@@ -126,14 +147,11 @@ GLuint create_program(GLuint* shader_list, int size, char* debug_name)
     }
     for(size_t index = 0; index < size; ++index)
     {
-        glDetachShader(program, shader_list[index]);
+        glDetachShader(program, shader_list[index].handle);
     }
     return program;
 }
 
-
-#define MAX_SHADERS 100
-#define MAX_PROGRAMS 100
 
 //Convenience struct for creating programs.
 struct FileShaderType
@@ -142,22 +160,6 @@ struct FileShaderType
     GLenum type;
 };
 
-//Internal shader representaiton
-struct Program;
-
-struct Shader
-{
-    char file_name[MAX_PATH];
-    GLenum type;
-    GLuint handle;
-    uint64 hash;
-    uint64 time_stamp;
-
-    //Program that use this shader
-    Program *programs[MAX_PROGRAMS];
-    uint32 num_programs;
-
-};
 
 // VERTEX_SHADER
 // FRAGMENT_SHADER
@@ -170,7 +172,7 @@ struct Program
 {
     uint64 hash;
     GLuint handle;
-    GLuint *shader_list[NUM_SHADERS_IN_PROGRAM];
+    Shader *shader_list[NUM_SHADERS_IN_PROGRAM];
     uint32 shader_count;
     bool32 need_update;
 };
@@ -216,11 +218,11 @@ struct ShaderSystem
             //Add the shader to the system
             shaders[num_shaders] = shader;
             //Add shader to program
-            new_program.shader_list[i] = &shaders[num_shaders].handle;
+            new_program.shader_list[i] = &shaders[num_shaders];
             ++num_shaders;
         }
         new_program.handle = create_program(new_program.shader_list[0], new_program.shader_count, program_name);
-        ++num_programs;
+        programs[num_programs++] = new_program;
     }
 
 #if 0
@@ -242,14 +244,17 @@ struct ShaderSystem
 
     GLuint * get_program(char* program_name)
     {
+        GLuint *result = 0;
         uint64 lookup_hash = HASH(program_name);
         for(uint32 index = 0; index < num_programs; ++index)
         {
             if(programs[index].hash == lookup_hash)
             {
-                return(&programs[index].handle);
+                result = &programs[index].handle;
+                break;
             }
         }
+        return(result);
     }
 };
 
@@ -259,6 +264,8 @@ ShaderSystem system = {};
 
 internal void init_test_program()
 {
+    #if 1 
+  
     FileShaderType shaders[2] = 
     {
         {"test.vert",GL_VERTEX_SHADER},
@@ -266,6 +273,8 @@ internal void init_test_program()
     };
 
     system.add_program(&shaders[0], 2, "test_program");
+    ogl_renderer.program_default = *system.get_program("test_program");
+  #endif
 
    #if 0 
     const int32 shader_list_size = 2;
@@ -276,11 +285,14 @@ internal void init_test_program()
         sgl_internal_shader_create(GL_FRAGMENT_SHADER,sgl_default_frag_shader[0])
     };
 
-    sgl_default_ogl.program_default = sgl_internal_program_create(shader_list, shader_list_size, "SGL Default Program");
+    ogl_renderer.program_default = sgl_internal_program_create(shader_list, shader_list_size, "SGL Default Program");
+
+    /*
     for(size_t index = 0; index < shader_list_size; ++index)
     {
         glDeleteShader(shader_list[index]);
     }
+    */
     #endif
 }
 //
@@ -338,6 +350,9 @@ void render()
     //2) By choosing a program name and the shader system gives us back the correct program ptr;
     //      glUseProgram(*get_program("default"));
 
+    //ogl_renderer.program_default = *system.get_program("test_program");
+    glUseProgram(ogl_renderer.program_default);
+    
 
     //NOTE: Triangle Example
     #if 1
