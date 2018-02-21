@@ -9,6 +9,17 @@
 
 typedef uint64_t uint64;
 
+//Helper
+void string_copy(char* from, char* to)
+{
+    while(*from)
+    {
+        *to++ = *from++;
+    }
+    *to = '\0';
+}
+
+
 //Global Variables
 global_variable SGLWindow main_window = {};
 
@@ -20,7 +31,7 @@ struct gl_renderer
     //Programs
     GLuint program_default; 
 };
-
+gl_renderer ogl_renderer = {};
 
 //Forward Declares
 internal LRESULT CALLBACK window_callback(HWND window, UINT message, WPARAM WParam, LPARAM LParam);
@@ -136,7 +147,7 @@ struct Program;
 
 struct Shader
 {
-    char* file_name[MAX_PATH];
+    char file_name[MAX_PATH];
     GLenum type;
     GLuint handle;
     uint64 hash;
@@ -185,7 +196,7 @@ struct ShaderSystem
 
         for(uint32 i = 0; i < count; ++i)
         {
-            //@TODO: Check if this shader existis in the system
+            //@TODO: Check if this shader exists in the system
             // If yes then retrieve the handle 
             //      Add it to the program shader list
             //      Add this program to its program list
@@ -194,9 +205,9 @@ struct ShaderSystem
             //If no then go here
             //New Shader to add to the system
             Shader shader = {};
-            shader.file_name = file_type_pair[i].file_name; //@TODO: CopyString
+            string_copy(file_type_pair[i].file_name, shader.file_name);
             shader.type =  file_type_pair[i].type;
-            shader.handle = create_shader_from_file(shader.file_name[0],shader.type);
+            shader.handle = create_shader_from_file(shader.file_name,shader.type);
             shader.hash = HASH(file_type_pair[i].file_name);
             shader.time_stamp = win32_get_file_timestamp(file_type_pair->file_name);
             shader.programs[shader.num_programs] = &programs[num_programs];
@@ -242,11 +253,21 @@ struct ShaderSystem
     }
 };
 
+ShaderSystem system = {};
 
 
-#if 0
-internal void sgl_init_default_program()
+
+internal void init_test_program()
 {
+    FileShaderType shaders[2] = 
+    {
+        {"test.vert",GL_VERTEX_SHADER},
+        {"test.frag",GL_FRAGMENT_SHADER}
+    };
+
+    system.add_program(&shaders[0], 2, "test_program");
+
+   #if 0 
     const int32 shader_list_size = 2;
     //NOTE(filipe): Triangle Example
     GLuint shader_list[shader_list_size] = 
@@ -260,8 +281,8 @@ internal void sgl_init_default_program()
     {
         glDeleteShader(shader_list[index]);
     }
+    #endif
 }
-#endif
 //
 //
 
@@ -274,21 +295,21 @@ reshape(int32 width, int32 height)
 void init_gl_state()
 {
     //Init default buffers
-    glGenBuffers(1, &sgl_default_ogl.index_buffer);
+    glGenBuffers(1, &ogl_renderer.index_buffer);
     //InitVertexBuffer(&sgl_default_ogl.VertexBuffer,triangle_vertex_positions,ArrayCount(triangle_vertex_positions));    
     //
 
     int32 length = sizeof(triangle_vertex_positions) / sizeof(triangle_vertex_positions[0]);
     int32 size = length*sizeof(triangle_vertex_positions[0]);
-    glGenBuffers(1, &sgl_default_ogl.vertex_buffer);
-    glBindBuffer(GL_ARRAY_BUFFER, sgl_default_ogl.vertex_buffer);
+    glGenBuffers(1, &ogl_renderer.vertex_buffer);
+    glBindBuffer(GL_ARRAY_BUFFER, ogl_renderer.vertex_buffer);
     glBufferData(GL_ARRAY_BUFFER,
                  size,
                  triangle_vertex_positions,
                  GL_STATIC_DRAW);    
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 
-    sgl_init_default_program();
+    init_test_program();
     
     //GL state 
     glEnable(GL_CULL_FACE);
@@ -319,14 +340,13 @@ void render()
 
 
     //NOTE: Triangle Example
-    /*
-    glBindBuffer(GL_ARRAY_BUFFER, sgl_default_ogl.vertex_buffer);
+    #if 1
+    glBindBuffer(GL_ARRAY_BUFFER, ogl_renderer.vertex_buffer);
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);    
     glDrawArrays(GL_TRIANGLES,0, 3);
     glDisableVertexAttribArray(0);
-    */
-
+    #endif
     //-- End Draw Commands --
 
 
