@@ -188,7 +188,7 @@ struct ShaderSystem
 
     //Can change at any time, and is cleared out after update_programs finishes
     uint32 num_to_update;
-    Program programs_to_update[MAX_PROGRAMS];
+    Program *programs_to_update[MAX_PROGRAMS];
 
     void add_program(FileShaderType *file_type_pair, uint32 count, char* program_name)
     {
@@ -255,6 +255,37 @@ struct ShaderSystem
             }
         }
         return(result);
+    }
+
+    void update_programs()
+    {
+        //Check if any shaders have been changed
+        for(uint32 i = 0; i < num_shaders; ++i)
+        {
+            Shader *curr_shader = &shaders[i];
+            uint64 timestamp = win32_get_file_timestamp(curr_shader->file_name);
+            if(timestamp > curr_shader->time_stamp)
+            {
+                //
+                printf("Shader at index: %d has changed", i);
+
+                //Recompile shader
+                curr_shader->handle = create_shader_from_file(curr_shader->file_name, curr_shader->type);
+                
+                //Set all programs that use this shader to need_update and add them to the 
+                //programs_to_update array
+                for(uint32 j = 0; j < curr_shader->num_programs; ++j)
+                {
+                    curr_shader->programs[j].need_update = true;
+                    programs_to_update[num_to_update] = curr_shader->programs[j];
+                    ++num_to_update; 
+                }
+            }
+        }
+
+        //Re-link programs in programs_to_update
+
+        //Reset their need to update var and reset programs to update and num_to_update
     }
 };
 
@@ -393,7 +424,9 @@ WinMain(HINSTANCE Instance,
     while(main_window.running)
     {
         process_msgs();
+        system.update_programs();
         render();
+
     }   
     return 0;
 }
