@@ -81,9 +81,13 @@ unsigned long djb2_hash(char* str)
 }
 
 //Shader and Program Creation
-GLuint create_shader_inline(const char* shader_file, GLenum shader_type)
+GLuint create_shader_inline(const char* shader_file, GLenum shader_type, GLuint prev_shader = 0)
 {
-    GLuint shader = glCreateShader(shader_type);
+    GLuint shader = prev_shader;
+    if(!shader)
+    {
+        shader = glCreateShader(shader_type);
+    }
     glShaderSource(shader, 1,&shader_file, NULL);
     glCompileShader(shader);
     
@@ -121,34 +125,52 @@ GLuint create_shader_from_file(char* file_name, GLenum shader_type)
     return(shader);
 }
 
+GLuint recompile_shader_from_file(char* file_name, GLenum shader_type, GLuint prev_shader)
+{
+    loaded_file file_to_load = {};
+    win32_load_file_data(file_name, &file_to_load);
+    GLuint shader = create_shader_inline((char*)file_to_load.contents, shader_type, prev_shader);
+    return(shader);
+}
+
+bool32 link_program(Shader* shader_list, uint32 size, GLuint program, char* debug_name)
+{
+    bool32 success = true;
+
+    for(size_t index = 0; index < size; ++index)
+        {
+            glAttachShader(program, shader_list[index].handle);
+            }
+        glLinkProgram(program);
+
+        GLint status;
+        glGetProgramiv (program, GL_LINK_STATUS, &status);
+        if (status == GL_FALSE)
+        {
+            success = false;
+            
+            GLint info_log_length;
+            glGetProgramiv(program, GL_INFO_LOG_LENGTH, &info_log_length);
+
+            GLchar *string_info_log = new GLchar[info_log_length + 1];
+            glGetProgramInfoLog(program, info_log_length, NULL, string_info_log);
+                
+            fprintf(stderr, "Linker failure in Program [%s]: %s\n",debug_name,  string_info_log);
+
+            delete(string_info_log);
+        }
+        for(size_t index = 0; index < size; ++index)
+        {
+            glDetachShader(program, shader_list[index].handle);
+        }
+
+    return(success);
+}
+
 GLuint create_program(Shader* shader_list, int size, char* debug_name)
 {
     GLuint program = glCreateProgram();
-    
-    for(size_t index = 0; index < size; ++index)
-    {
-        glAttachShader(program, shader_list[index].handle);
-    }
-    glLinkProgram(program);
-
-    GLint status;
-    glGetProgramiv (program, GL_LINK_STATUS, &status);
-    if (status == GL_FALSE)
-    {
-        GLint info_log_length;
-        glGetProgramiv(program, GL_INFO_LOG_LENGTH, &info_log_length);
-
-        GLchar *string_info_log = new GLchar[info_log_length + 1];
-        glGetProgramInfoLog(program, info_log_length, NULL, string_info_log);
-            
-        fprintf(stderr, "Linker failure in Program [%s]: %s\n",debug_name,  string_info_log);
-
-        delete(string_info_log);
-    }
-    for(size_t index = 0; index < size; ++index)
-    {
-        glDetachShader(program, shader_list[index].handle);
-    }
+    link_program(shader_list, size, program,  debug_name);
     return program;
 }
 
@@ -170,6 +192,7 @@ struct FileShaderType
 #define NUM_SHADERS_IN_PROGRAM 6
 struct Program
 {
+    char name[MAX_PATH];
     uint64 hash;
     GLuint handle;
     Shader *shader_list[NUM_SHADERS_IN_PROGRAM];
@@ -193,6 +216,7 @@ struct ShaderSystem
     void add_program(FileShaderType *file_type_pair, uint32 count, char* program_name)
     {
         Program new_program = {};
+        string_copy(program_name,new_program.name);
         new_program.hash = HASH(program_name);
         new_program.shader_count = count;
 
@@ -259,6 +283,7 @@ struct ShaderSystem
 
     void update_programs()
     {
+        
         //Check if any shaders have been changed
         for(uint32 i = 0; i < num_shaders; ++i)
         {
@@ -270,22 +295,30 @@ struct ShaderSystem
                 printf("Shader at index: %d has changed", i);
 
                 //Recompile shader
-                curr_shader->handle = create_shader_from_file(curr_shader->file_name, curr_shader->type);
+                curr_shader->handle = recompile_shader_from_file(curr_shader->file_name, curr_shader->type, curr_shader->handle);
                 
                 //Set all programs that use this shader to need_update and add them to the 
                 //programs_to_update array
                 for(uint32 j = 0; j < curr_shader->num_programs; ++j)
                 {
-                    curr_shader->programs[j].need_update = true;
+                    curr_shader->programs[j]->need_update = true;
                     programs_to_update[num_to_update] = curr_shader->programs[j];
                     ++num_to_update; 
                 }
             }
         }
 
-        //Re-link programs in programs_to_update
-
-        //Reset their need to update var and reset programs to update and num_to_update
+        //Re-link programs in programs_to_update,Reset their need to update var
+        for(uint32 i = 0; i < num_to_update; ++i)
+        {
+            Program *program_to_update = programs_to_update[i];
+            //@TODO: What if the program was not relinked succesfully?? Deal with it.
+            link_program(program_to_update->shader_list[0], program_to_update->shader_count,
+                         program_to_update->handle, program_to_update->name);
+            program_to_update->need_update = false;
+        }
+        //Reset programs to update and num_to_update
+        num_to_update = 0;
     }
 };
 
