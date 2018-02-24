@@ -67,7 +67,7 @@ struct loaded_file
     int size;
 };
 
-bool32 win32_load_file_data(char *file_name, loaded_file *loaded_file);
+bool32 win32_load_file_data(char *file_name, loaded_file *loaded_file, bool32 debug = 0);
 void win32_free_loaded_file(loaded_file *loaded_file);
 FILETIME win32_get_file_timestamp(char* file_name);
 bool32 win32_check_shader_and_update(Shader *shader);
@@ -85,6 +85,8 @@ unsigned long djb2_hash(char* str)
 }
 
 //Shader and Program Creation
+
+//@TODO: Erorr logging if shader_file is blank
 GLuint create_shader_inline(const char* shader_file, GLenum shader_type, GLuint prev_shader = 0)
 {
     GLuint shader = prev_shader;
@@ -92,6 +94,7 @@ GLuint create_shader_inline(const char* shader_file, GLenum shader_type, GLuint 
     {
         shader = glCreateShader(shader_type);
     }
+    
     glShaderSource(shader, 1,&shader_file, NULL);
     glCompileShader(shader);
     
@@ -121,6 +124,7 @@ GLuint create_shader_inline(const char* shader_file, GLenum shader_type, GLuint 
     return shader;
 }
 
+//@TODO: Error logging if file not found.
 GLuint create_shader_from_file(char* file_name, GLenum shader_type)
 {
     loaded_file file_to_load = {};
@@ -132,7 +136,13 @@ GLuint create_shader_from_file(char* file_name, GLenum shader_type)
 GLuint recompile_shader_from_file(char* file_name, GLenum shader_type, GLuint prev_shader)
 {
     loaded_file file_to_load = {};
-    win32_load_file_data(file_name, &file_to_load);
+    bool32 loaded = win32_load_file_data(file_name, &file_to_load, 1);
+    while(!loaded)
+    {
+        //@TODO: Do some log here:
+        int x = 5;
+        loaded = win32_load_file_data(file_name, &file_to_load, 1);
+    }
     GLuint shader = create_shader_inline((char*)file_to_load.contents, shader_type, prev_shader);
     return(shader);
 }
@@ -548,16 +558,26 @@ process_msgs(void)
 
 
 bool32
-win32_load_file_data(char *file_name, loaded_file *loaded_file)
+win32_load_file_data(char *file_name, loaded_file *loaded_file, bool32 debug)
 {
+    
     bool32 loaded  = false;
     HANDLE file_handle = CreateFileA(file_name,GENERIC_READ,FILE_SHARE_READ,0,OPEN_EXISTING, 0, 0);
+
+    if(debug)
+    {
+        int x = 0;
+        DWORD error = GetLastError();
+        int break_here = 0;
+    }
+
     if(file_handle != INVALID_HANDLE_VALUE)
     {
         LARGE_INTEGER file_size;
         if(GetFileSizeEx(file_handle, &file_size))
         {
             unsigned int file_size_32 = (int)(file_size.QuadPart);
+            //@TODO: Change to malloc and call free!!!
             loaded_file->contents = VirtualAlloc(0, file_size_32, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
             if(loaded_file->contents)
             {
@@ -571,6 +591,10 @@ win32_load_file_data(char *file_name, loaded_file *loaded_file)
             }
         }
         CloseHandle(file_handle);
+    }
+    else
+    {
+        int x = 5; //break here
     }
     return(loaded);
 }
@@ -614,6 +638,7 @@ win32_check_shader_and_update(Shader* shader)
     {
         shader->timestamp = last_write_time;
     }
+    CloseHandle(file_handle);
     return(modified);
 }
 
