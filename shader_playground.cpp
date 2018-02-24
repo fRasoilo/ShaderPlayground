@@ -1,5 +1,6 @@
 
-#include <sys/stat.h> //__stat64 and _stat64
+//@TODO: Try to make this work in win32_get_file_timestamp
+//#include <sys/stat.h> //__stat64 and _stat64
 
 
 #define SIMPLE_OGL_IMPLEMENTATION
@@ -45,7 +46,9 @@ struct Shader
     GLenum type;
     GLuint handle;
     uint64 hash;
-    uint64 time_stamp;
+
+    //Win32
+    FILETIME timestamp;
 
     //Program that use this shader
     Program *programs[MAX_PROGRAMS];
@@ -66,7 +69,8 @@ struct loaded_file
 
 bool32 win32_load_file_data(char *file_name, loaded_file *loaded_file);
 void win32_free_loaded_file(loaded_file *loaded_file);
-uint64 win32_get_file_timestamp(char* file_name);
+FILETIME win32_get_file_timestamp(char* file_name);
+bool32 win32_check_shader_and_update(Shader *shader);
 
 
 #define HASH(str) djb2_hash(str)
@@ -235,7 +239,7 @@ struct ShaderSystem
             shader.type =  file_type_pair[i].type;
             shader.handle = create_shader_from_file(shader.file_name,shader.type);
             shader.hash = HASH(file_type_pair[i].file_name);
-            shader.time_stamp = win32_get_file_timestamp(file_type_pair->file_name);
+            shader.timestamp = win32_get_file_timestamp(file_type_pair[i].file_name);
             shader.programs[shader.num_programs] = &programs[num_programs];
             shader.num_programs++;
 
@@ -288,8 +292,9 @@ struct ShaderSystem
         for(uint32 i = 0; i < num_shaders; ++i)
         {
             Shader *curr_shader = &shaders[i];
-            uint64 timestamp = win32_get_file_timestamp(curr_shader->file_name);
-            if(timestamp > curr_shader->time_stamp)
+
+            bool32 modified = win32_check_shader_and_update(curr_shader);
+            if(modified)
             {
                 //
                 printf("Shader at index: %d has changed", i);
@@ -579,14 +584,38 @@ win32_free_loaded_file(loaded_file *loaded_file)
     }
 }
 
-uint64 
+
+FILETIME 
 win32_get_file_timestamp(char* file_name)
 {
+    #if 0 
     struct __stat64 file_info = {};
     _stat64(file_name, &file_info);
     return(file_info.st_mtime);
+    #endif
+
+    HANDLE file_handle = CreateFile(file_name,0,0,0,OPEN_EXISTING,0,0);
+    FILETIME last_write_time = {};
+    GetFileTime(file_handle,0,0,&last_write_time);
+    return(last_write_time);
 }
 
+bool32 
+win32_check_shader_and_update(Shader* shader)
+{
+    //Check
+    bool32 modified = false;
+    HANDLE file_handle = CreateFile(shader->file_name,0,0,0,OPEN_EXISTING,0,0);
+    FILETIME last_write_time = {};
+    GetFileTime(file_handle,0,0,&last_write_time);
+    modified = CompareFileTime(&shader->timestamp,&last_write_time);
+    //Update
+    if(modified)
+    {
+        shader->timestamp = last_write_time;
+    }
+    return(modified);
+}
 
 //
 //
