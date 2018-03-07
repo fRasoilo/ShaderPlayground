@@ -8,6 +8,24 @@
 
 #include "simple_ogl.h"
 
+
+
+char* vert_shader_file_name = "test_tex.vert";
+char* frag_shader_file_name = "test_tex.frag" ;
+
+GLfloat quad_vertex_positions[] = {
+    //Pos               //UV
+   -0.5f, -0.5f, 0.0f,  0.0, 0.0,
+   0.5f, -0.5f, 0.0f,   1.0, 0.0,
+   0.5f,  0.5f, 0.0f,   1.0, 1.0,
+
+   -0.5f,  0.5f, 0.0f,  0.0, 1.0,
+   -0.5f, -0.5f, 0.0f,  0.0, 0.0,
+   0.5f,  0.5f, 0.0f,   1.0, 1.0,
+
+
+};
+
 typedef uint64_t uint64;
 
 //Helper
@@ -29,6 +47,12 @@ struct gl_renderer
     GLuint index_buffer;
     GLuint vertex_buffer;
     
+    //Texture
+    GLuint texture_id;
+    void* texture = 0;
+    int32 texture_width = 0;
+    int32 texture_height = 0;
+
     //Programs
     GLuint program_default; 
 };
@@ -37,6 +61,27 @@ gl_renderer ogl_renderer = {};
 //Internal shader representaiton
 #define MAX_SHADERS 100
 #define MAX_PROGRAMS 100
+
+GLuint
+setup_texture(void* texture, int32 width, int32 height)
+{
+    GLuint tex_id;
+    glGenTextures(1, &tex_id);
+    glBindTexture(GL_TEXTURE_2D, tex_id);
+
+    #define GL_CLAMP_TO_EDGE                  0x812F
+    #define GL_CLAMP_TO_BORDER                0x812D
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER); 
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width,height, 0,GL_RGBA, GL_UNSIGNED_BYTE, texture);
+    
+    return(tex_id);
+}
 
 struct Program;
 
@@ -139,8 +184,6 @@ GLuint recompile_shader_from_file(char* file_name, GLenum shader_type, GLuint pr
     bool32 loaded = win32_load_file_data(file_name, &file_to_load, 1);
     while(!loaded)
     {
-        //@TODO: Do some log here:
-        int x = 5;
         loaded = win32_load_file_data(file_name, &file_to_load, 1);
     }
     GLuint shader = create_shader_inline((char*)file_to_load.contents, shader_type, prev_shader);
@@ -187,6 +230,7 @@ GLuint create_program(Shader* shader_list, int size, char* debug_name)
     link_program(shader_list, size, program,  debug_name);
     return program;
 }
+
 
 
 //Convenience struct for creating programs.
@@ -337,7 +381,7 @@ struct ShaderSystem
     }
 };
 
-ShaderSystem system = {};
+ShaderSystem shader_system = {};
 
 
 
@@ -347,32 +391,15 @@ internal void init_test_program()
   
     FileShaderType shaders[2] = 
     {
-        {"test.vert",GL_VERTEX_SHADER},
-        {"test.frag",GL_FRAGMENT_SHADER}
+        {vert_shader_file_name,GL_VERTEX_SHADER},
+        {frag_shader_file_name,GL_FRAGMENT_SHADER}
     };
 
-    system.add_program(&shaders[0], 2, "test_program");
-    ogl_renderer.program_default = *system.get_program("test_program");
+    shader_system.add_program(&shaders[0], 2, "test_program");
+    ogl_renderer.program_default = *shader_system.get_program("test_program");
   #endif
 
-   #if 0 
-    const int32 shader_list_size = 2;
-    //NOTE(filipe): Triangle Example
-    GLuint shader_list[shader_list_size] = 
-    {
-        sgl_internal_shader_create(GL_VERTEX_SHADER,sgl_default_vertex_shader[0]),
-        sgl_internal_shader_create(GL_FRAGMENT_SHADER,sgl_default_frag_shader[0])
-    };
-
-    ogl_renderer.program_default = sgl_internal_program_create(shader_list, shader_list_size, "SGL Default Program");
-
-    /*
-    for(size_t index = 0; index < shader_list_size; ++index)
-    {
-        glDeleteShader(shader_list[index]);
-    }
-    */
-    #endif
+   
 }
 //
 //
@@ -385,18 +412,19 @@ reshape(int32 width, int32 height)
 
 void init_gl_state()
 {
+
     //Init default buffers
     glGenBuffers(1, &ogl_renderer.index_buffer);
     //InitVertexBuffer(&sgl_default_ogl.VertexBuffer,triangle_vertex_positions,ArrayCount(triangle_vertex_positions));    
     //
 
-    int32 length = sizeof(triangle_vertex_positions) / sizeof(triangle_vertex_positions[0]);
-    int32 size = length*sizeof(triangle_vertex_positions[0]);
+    int32 length = sizeof(quad_vertex_positions) / sizeof(quad_vertex_positions[0]);
+    int32 size = length*sizeof(quad_vertex_positions[0]);
     glGenBuffers(1, &ogl_renderer.vertex_buffer);
     glBindBuffer(GL_ARRAY_BUFFER, ogl_renderer.vertex_buffer);
     glBufferData(GL_ARRAY_BUFFER,
                  size,
-                 triangle_vertex_positions,
+                 quad_vertex_positions,
                  GL_STATIC_DRAW);    
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 
@@ -415,6 +443,8 @@ void init_gl_state()
     glBlendFunc (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 }
 
+static float global_dt = 0.0f;
+
 void render()
 {    
     glClearColor(1.0f, 0.5f, 0.5f, 1.0f);
@@ -426,20 +456,30 @@ void render()
     //Want to be able to choose program in two ways:
     //1) By passing in a program var that we store and manage, this is a ptr to GLuint that we initialize.
     //      glUseProgram(*ogl.program_default);
-    //2) By choosing a program name and the shader system gives us back the correct program ptr;
+    //2) By choosing a program name and the shader shader_system gives us back the correct program ptr;
     //      glUseProgram(*get_program("default"));
 
-    //ogl_renderer.program_default = *system.get_program("test_program");
+    //ogl_renderer.program_default = *shader_system.get_program("test_program");
     glUseProgram(ogl_renderer.program_default);
     
 
-    //NOTE: Triangle Example
+    //NOTE: Quad Example
     #if 1
+    GLuint time_uniform = glGetUniformLocation(ogl_renderer.program_default, "time_in");
+    glUniform1f(time_uniform, global_dt);
+
     glBindBuffer(GL_ARRAY_BUFFER, ogl_renderer.vertex_buffer);
     glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);    
-    glDrawArrays(GL_TRIANGLES,0, 3);
+    glEnableVertexAttribArray(1); //UV
+
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(float)*5, 0);    
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(float)*5, (GLvoid*)(3* sizeof(float)) ); //UV
+        
+    glBindTexture(GL_TEXTURE_2D, ogl_renderer.texture_id);
+    glDrawArrays(GL_TRIANGLES,0, 6);
     glDisableVertexAttribArray(0);
+    glDisableVertexAttribArray(1);
+    
     #endif
     //-- End Draw Commands --
 
@@ -472,7 +512,7 @@ WinMain(HINSTANCE Instance,
     while(main_window.running)
     {
         process_msgs();
-        system.update_programs();
+        shader_system.update_programs();
         render();
 
     }   

@@ -322,6 +322,8 @@ void sgl_win32_window_toggle_fullscreen(SGLWindow* window);
     DECLARE_GL_FUNC_PTR(void, glGetProgramiv, (GLuint, GLenum, GLint *)) 
     DECLARE_GL_FUNC_PTR(void, glGetProgramInfoLog, (GLuint, GLsizei, GLsizei *, GLchar *))
     DECLARE_GL_FUNC_PTR(void, glDetachShader, (GLuint, GLuint))
+    DECLARE_GL_FUNC_PTR(void, glUniform1f, (GLint, GLfloat))
+    
     
     //[DECLARE NEW GL FUNCTION]
     //Declare any new functions here...
@@ -366,6 +368,7 @@ void sgl_load_gl_functions()
     GET_GL_FUNC_SAFE(glGetProgramiv)
     GET_GL_FUNC_SAFE(glGetProgramInfoLog)
     GET_GL_FUNC_SAFE(glDetachShader)
+    GET_GL_FUNC_SAFE(glUniform1f)
 
     //[LOAD NEW FUNCTION]
     // Load any other functions you might need here.
@@ -695,6 +698,8 @@ GLfloat triangle_vertex_positions[] = {
    1.0f, -1.0f, 0.0f,
    0.0f,  1.0f, 0.0f,
 };
+
+
 
 struct sgl_default_renderer{
     GLuint index_buffer;
